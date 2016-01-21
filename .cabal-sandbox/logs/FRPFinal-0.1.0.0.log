@@ -1,0 +1,25 @@
+Installing executable(s) in
+C:\Users\SaltShineZ\final\FRPFinal\.cabal-sandbox\bin
+.0...
+[1 of 1] Compiling Main             ( Main.hs, dist\dist-sandbox-cf322d0f\build\FRPFinal\FRPFinal-tmp\Main.o )
+
+Main.hs:26:1: Warning: Tab character
+
+Main.hs:59:1: Warning: Tab character
+
+Main.hs:60:1: Warning: Tab character
+
+Main.hs:78:1: Warning: Tab character
+
+Main.hs:99:1: Warning: Tab character
+
+Main.hs:127:1: Warning: Tab character
+
+Main.hs:139:1: Warning: Tab character
+
+Main.hs:159:55: Warning: Tab character
+
+Main.hs:173:73: Warning: Tab character
+
+Main.hs:175:1: Warning: Tab character
+Linking dist/dist-sandbox-cf322d0f\build\FRPFinal\FRPFinal.exe ...
