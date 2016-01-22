@@ -25,8 +25,8 @@ data GameState = Game { xpos     :: Pos, ypos :: Pos,
 
 					  
 --mainSF = ((movingBall (-4.0) 2.0) &&& (bouncingBall 10.0 0.0)) >>^ (\ ((xpos,xvel),(ypos, yvel)) -> putStrLn ("pos: " ++ show xpos ++ "," ++ show ypos ++ "   vel: " ++ show xvel ++ "," ++ show yvel) >> draw (xpos, ypos))
-mainSF = parseInput >>> update >>> (bouncingBall 10.0 0.0) >>^ (\ gs -> draw gs)
---mainSF = parseInput >>^ (\ParsedInput{aCount, dCount}-> putStrLn ("playerPos: " ++ show (aCount ) ++ "," ++ "   vel: " ++ show (dCount ) )) 
+mainSF = parseInput >>> update >>> (movingBall 0.0 3.0) >>> (bouncingBall 10.0 0.0)   >>^ (\ gs -> draw gs)
+--mainSF = parseInput >>^ (\ParsedInput{aCount, dCount}-> putStrLn ("playerPos: " ++ show (aCount ) ++ "," ++ "   vel: " ++ show (dCount ) ))  
  
 
 main :: IO ()
@@ -125,23 +125,38 @@ parseInput = proc i -> do
 
 -------------------------------------
 				
-fallingBall ::  Pos ->  Vel -> SF GameState GameState
-fallingBall y0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) -> do
-  v <- integral >>^ (+ v0) -< -9.81    -- v = v0 + \int_0^T a dt
-  y <- integral >>^ (+ y0) -< v        -- y = y0 + \int_0^T v dt
-  returnA -< Game xpos y xvel v playerXPos playerXVel
 
 {- 
   switch :: SF in (out, Event t)
        -> (t -> SF in out)
        -> SF in out 
 -}
-	   
+
+flyingBall :: Pos -> Vel -> SF GameState GameState
+flyingBall x0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) -> do
+  v <- integral >>^ (+ v0) -< 0    -- v = v0 + \int_0^T a dt
+  x <- integral >>^ (+ x0) -< v        -- y = y0 + \int_0^T v dt
+  returnA -< Game x ypos v yvel playerXPos playerXVel
+
+movingBall :: Pos -> Vel -> SF GameState GameState
+movingBall  x0 v0 = switch (mb x0 v0) (\ (pos, vel) -> movingBall pos (-vel))
+    where mb x0' v0' = proc input -> do 
+                        gs <- flyingBall x0' v0' -< input
+                        event <- edge -< ((xpos gs) <=(-5) || (xpos gs) > 5) --edge :: SF Bool (Event ())
+                        
+                        returnA -<( gs, event `tag` (xpos gs, xvel gs))      --
+                        
+fallingBall ::  Pos ->  Vel -> SF GameState GameState
+fallingBall y0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) -> do
+  v <- integral >>^ (+ v0) -< -9.81    -- v = v0 + \int_0^T a dt
+  y <- integral >>^ (+ y0) -< v        -- y = y0 + \int_0^T v dt
+  returnA -< Game xpos y xvel v playerXPos playerXVel
+
 bouncingBall :: Pos -> Vel -> SF GameState GameState
 bouncingBall y0 v0 = switch (bb y0 v0) (\ (pos, vel) -> bouncingBall pos (-vel))
- where bb y0' v0' = proc input -> do
+    where bb y0' v0' = proc input -> do
                     gs <- fallingBall y0' v0' -< input 
-                    event <- edge -< ((ypos gs) <=0 && (ypos gs)>(-0.3)) && (abs((xpos gs)-(playerXPos gs))<0.7)
+                    event <- edge -< ((ypos gs) <=0 && (ypos gs)>(-0.3))  && (abs((xpos gs)-(playerXPos gs))<3.0)
                     returnA -<  (gs , event `tag` (ypos gs, yvel gs))
 
 
@@ -156,8 +171,8 @@ draw :: GameState-> IO ()
 draw gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) = do
     clear [ ColorBuffer, DepthBuffer ]
     loadIdentity
-    renderBall $ vector3 (0) (unsafeCoerce ypos) (-20)	
-    renderPlayer $ vector3 (unsafeCoerce playerXPos) (0) (-20)
+    renderBall $ vector3 (unsafeCoerce xpos) (unsafeCoerce ypos) (-20)	
+    renderPlayer $ vector3 (unsafeCoerce playerXPos) (-3) (-20)
     swapBuffers
     where size2 :: R
           size2 = (fromInteger $ 6)/2
@@ -170,7 +185,7 @@ draw gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) = do
                                   (0.5 - size2 + vector3Z p)
             renderObject Solid s
           renderBall   = (color red >>) . (renderShapeAt $ Sphere' 0.5 20 20)          
-          renderPlayer   = (color green >>) . (renderShapeAt $ Cube 2)  		  
+          renderPlayer   = (color green >>) . (renderShapeAt $ Cube 6)  		  
 
 		  
 
