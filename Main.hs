@@ -30,7 +30,8 @@ data GameState = Game { xpos     :: Pos, ypos :: Pos,
 
 					  
 --mainSF = ((movingBall (-4.0) 2.0) &&& (bouncingBall 10.0 0.0)) >>^ (\ ((xpos,xvel),(ypos, yvel)) -> putStrLn ("pos: " ++ show xpos ++ "," ++ show ypos ++ "   vel: " ++ show xvel ++ "," ++ show yvel) >> draw (xpos, ypos))
-mainSF = parseInput >>> update >>> (movingBall 0.0 1.0) >>> (bouncingBall 10.0 0.0)   >>^ ((\gs->putStrLn("Score: "++ show (score gs)))>>(\ gs -> draw gs))
+mainSF = parseInput >>> update >>> (movingBall 0.0 15.0) >>> (bouncingBall 10.0 0.0) >>>(scoreUpdate 0.0 1.0)  >>^ (\ gs -> draw gs) 
+--mainSF = parseInput >>> update >>> (movingBall 0.0 1.0) >>> (bouncingBall 10.0 0.0)   >>^ ((\gs->putStrLn("Score: "++ show (score gs)))>>(\ gs -> draw gs))
 --(\ (pos, vel) -> putStrLn ("pos: " ++ show pos ++ ", vel: " ++ show vel) >> draw pos)
 --mainSF = parseInput >>^ (\ParsedInput{aCount, dCount}-> putStrLn ("playerPos: " ++ show (aCount ) ++ "," ++ "   vel: " ++ show (dCount ) ))  
  
@@ -147,7 +148,7 @@ scoreUpdate :: Pos -> Vel -> SF GameState GameState  --
 scoreUpdate  s0 pv0 = switch (su s0 pv0) (\ (pos,vel) -> scoreUpdate (pos) (vel))
     where su s0' pv0' = proc input -> do 
                     gs <- timeBouns s0' pv0' -<input
-                    event <- edge -< (abs((xpos gs)-(playerXPos gs))<3.0)
+                    event <- edge -< (abs((xpos gs)-(playerXPos gs))>30.0)
                     
                     returnA -< (gs, event `tag` (score gs, playerXVel gs))
   
@@ -157,6 +158,7 @@ flyingBall :: Pos -> Vel -> SF GameState GameState
 flyingBall x0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score}) -> do
   v <- integral >>^ (+ v0) -< 0    -- v = v0 + \int_0^T a dt
   x <- integral >>^ (+ x0) -< v        -- y = y0 + \int_0^T v dt
+  
   returnA -< Game x ypos v yvel playerXPos playerXVel score
 
 movingBall :: Pos -> Vel -> SF GameState GameState
@@ -173,8 +175,8 @@ fallingBall ::  Pos ->  Vel -> SF GameState GameState
 fallingBall y0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score}) -> do
   v <- integral >>^ (+ v0) -< -9.81    -- v = v0 + \int_0^T a dt
   y <- integral >>^ (+ y0) -< v        -- y = y0 + \int_0^T v dt
-  --xv' <- integral >>^ (+( playerXVel Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score})) -< (xvel Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score})
-  returnA -< Game xpos y xvel v playerXPos playerXVel score
+  xv' <- (arr (+1000)) -< playerXVel ---didn't work= =
+  returnA -< Game xpos y xv' v playerXPos playerXVel score
 
 bouncingBall :: Pos -> Vel -> SF GameState GameState
 bouncingBall y0 v0 = switch (bb y0 v0) (\ (pos, vel) -> bouncingBall pos (-vel))
@@ -194,13 +196,24 @@ update = proc pi@(ParsedInput{ aCount, dCount }) -> do
 draw :: GameState-> IO ()
 draw gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score }) = do
     --s = show (score)
+    
     clear [ ColorBuffer, DepthBuffer ]
     loadIdentity
     renderBall $ vector3 (unsafeCoerce xpos) (unsafeCoerce ypos) (-20)	
     renderPlayer $ vector3 (unsafeCoerce playerXPos) (-3) (-20)
-    renderBlock $ vector3 (10) (5) (-20)
+    --renderBlock $ vector3 (10) (5) (-20)
     
+    {--
+    renderScore $ vector3 (0) (5) (-20)
+    color $ Color3 (1.0 :: NDouble) 1.0 1.0
+    preservingMatrix $ do
+      translate $ G.Vector3 (-250 :: NDouble) 0 0
+        scale (0.8 :: NDouble) 0.8 0.8
+        renderString Roman "shu-thing"
+    
+    --}
     swapBuffers
+    putStrLn("Score: "++ (show(score)))
     where size2 :: R
           size2 = (fromInteger $ 6)/2
           green  = Color4 0.8 1.0 0.7 0.9 :: Color4 R
@@ -213,12 +226,13 @@ draw gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score }) = do
             renderObject Solid s
           renderBall   = (color red >>) . (renderShapeAt $ Sphere' 0.5 20 20)          
           renderPlayer   = (color green >>) . (renderShapeAt $ Cube 6)  		
-          renderBlock = (color greenG >>) . (renderShapeAt $ Sphere' 0.5 10 10)
+          --renderBlock = (color greenG >>) . (renderShapeAt $ Sphere' 0.5 10 10)
+          --renderScore = (color greenG >>) . (renderString Roman "Hello")
           
 
 		  
 {-
-steal from http://hackage.haskell.org/package/Shu-thing
+stealing from http://hackage.haskell.org/package/Shu-thing
 
 newtype Scene = Scene (IO Scene)
 
