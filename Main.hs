@@ -10,6 +10,10 @@ import FRP.Yampa.Integration
 import Graphics.UI.GLUT hiding (Level,Vector3(..),normalize)
 import qualified Graphics.UI.GLUT as G(Vector3(..))
 
+import qualified Foreign.C.Types
+
+type NDouble = Foreign.C.Types.CDouble
+
 type R = GLdouble
 
 type Pos = Double
@@ -20,12 +24,14 @@ type Vel = Double
 data GameState = Game { xpos     :: Pos, ypos :: Pos,
                         xvel      :: Vel, yvel :: Vel,
                         playerXPos :: Pos, 
-                        playerXVel :: Vel}
+                        playerXVel :: Vel,
+                        score :: Pos} --偷懶直接用Pos 分數的現在位置XD
 
 
 					  
 --mainSF = ((movingBall (-4.0) 2.0) &&& (bouncingBall 10.0 0.0)) >>^ (\ ((xpos,xvel),(ypos, yvel)) -> putStrLn ("pos: " ++ show xpos ++ "," ++ show ypos ++ "   vel: " ++ show xvel ++ "," ++ show yvel) >> draw (xpos, ypos))
-mainSF = parseInput >>> update >>> (movingBall 0.0 3.0) >>> (bouncingBall 10.0 0.0)   >>^ (\ gs -> draw gs)
+mainSF = parseInput >>> update >>> (movingBall 0.0 1.0) >>> (bouncingBall 10.0 0.0)   >>^ ((\gs->putStrLn("Score: "++ show (score gs)))>>(\ gs -> draw gs))
+--(\ (pos, vel) -> putStrLn ("pos: " ++ show pos ++ ", vel: " ++ show vel) >> draw pos)
 --mainSF = parseInput >>^ (\ParsedInput{aCount, dCount}-> putStrLn ("playerPos: " ++ show (aCount ) ++ "," ++ "   vel: " ++ show (dCount ) ))  
  
 
@@ -132,25 +138,43 @@ parseInput = proc i -> do
        -> SF in out 
 -}
 
+timeBouns :: Pos -> Vel-> SF GameState GameState
+timeBouns s0 pv0 =  proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score}) -> do
+  s <- integral >>^ (+ s0) -< pv0        -- y = y0 + \int_0^T v dt
+  returnA -< Game xpos ypos xvel yvel playerXPos playerXVel s
+
+scoreUpdate :: Pos -> Vel -> SF GameState GameState  --
+scoreUpdate  s0 pv0 = switch (su s0 pv0) (\ (pos,vel) -> scoreUpdate (pos) (vel))
+    where su s0' pv0' = proc input -> do 
+                    gs <- timeBouns s0' pv0' -<input
+                    event <- edge -< (abs((xpos gs)-(playerXPos gs))<3.0)
+                    
+                    returnA -< (gs, event `tag` (score gs, playerXVel gs))
+  
+--x-axis movement
+  
 flyingBall :: Pos -> Vel -> SF GameState GameState
-flyingBall x0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) -> do
+flyingBall x0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score}) -> do
   v <- integral >>^ (+ v0) -< 0    -- v = v0 + \int_0^T a dt
   x <- integral >>^ (+ x0) -< v        -- y = y0 + \int_0^T v dt
-  returnA -< Game x ypos v yvel playerXPos playerXVel
+  returnA -< Game x ypos v yvel playerXPos playerXVel score
 
 movingBall :: Pos -> Vel -> SF GameState GameState
 movingBall  x0 v0 = switch (mb x0 v0) (\ (pos, vel) -> movingBall pos (-vel))
     where mb x0' v0' = proc input -> do 
                         gs <- flyingBall x0' v0' -< input
-                        event <- edge -< ((xpos gs) <=(-5) || (xpos gs) > 5) --edge :: SF Bool (Event ())
+                        event <- edge -< ((xpos gs) <=(-6) || (xpos gs) > 10) --edge :: SF Bool (Event ())
                         
                         returnA -<( gs, event `tag` (xpos gs, xvel gs))      --
-                        
+
+
+--y-axis movement                        
 fallingBall ::  Pos ->  Vel -> SF GameState GameState
-fallingBall y0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) -> do
+fallingBall y0 v0 = proc gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score}) -> do
   v <- integral >>^ (+ v0) -< -9.81    -- v = v0 + \int_0^T a dt
   y <- integral >>^ (+ y0) -< v        -- y = y0 + \int_0^T v dt
-  returnA -< Game xpos y xvel v playerXPos playerXVel
+  --xv' <- integral >>^ (+( playerXVel Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score})) -< (xvel Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score})
+  returnA -< Game xpos y xvel v playerXPos playerXVel score
 
 bouncingBall :: Pos -> Vel -> SF GameState GameState
 bouncingBall y0 v0 = switch (bb y0 v0) (\ (pos, vel) -> bouncingBall pos (-vel))
@@ -163,16 +187,19 @@ bouncingBall y0 v0 = switch (bb y0 v0) (\ (pos, vel) -> bouncingBall pos (-vel))
 update :: SF ParsedInput GameState
 update = proc pi@(ParsedInput{ aCount, dCount }) -> do
     returnA -< Game { xpos     = 0, ypos = 0, xvel = 0, yvel = 0,
-                      playerXPos = realToFrac (dCount-aCount), playerXVel = 0}
+                      playerXPos = realToFrac (dCount-aCount), playerXVel = 0, score = 0}
 
 ----------------------------					  
 
 draw :: GameState-> IO ()
-draw gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) = do
+draw gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel, score }) = do
+    --s = show (score)
     clear [ ColorBuffer, DepthBuffer ]
     loadIdentity
     renderBall $ vector3 (unsafeCoerce xpos) (unsafeCoerce ypos) (-20)	
     renderPlayer $ vector3 (unsafeCoerce playerXPos) (-3) (-20)
+    renderBlock $ vector3 (10) (5) (-20)
+    
     swapBuffers
     where size2 :: R
           size2 = (fromInteger $ 6)/2
@@ -185,10 +212,36 @@ draw gs@(Game{ xpos, ypos, xvel, yvel, playerXPos, playerXVel }) = do
                                   (0.5 - size2 + vector3Z p)
             renderObject Solid s
           renderBall   = (color red >>) . (renderShapeAt $ Sphere' 0.5 20 20)          
-          renderPlayer   = (color green >>) . (renderShapeAt $ Cube 6)  		  
+          renderPlayer   = (color green >>) . (renderShapeAt $ Cube 6)  		
+          renderBlock = (color greenG >>) . (renderShapeAt $ Sphere' 0.5 10 10)
+          
 
 		  
+{-
+steal from http://hackage.haskell.org/package/Shu-thing
 
+newtype Scene = Scene (IO Scene)
+
+openingProc :: IORef [Key] -> IO Scene
+openingProc ks = do
+  keystate <- readIORef ks
+
+  clear [ColorBuffer,DepthBuffer]
+  matrixMode $= Modelview 0
+  loadIdentity
+
+  color $ Color3 (1.0 :: NDouble) 1.0 1.0
+  preservingMatrix $ do
+    translate $ Vector3 (-250 :: NDouble) 0 0
+    scale (0.8 :: NDouble) 0.8 0.8
+    renderString Roman "shu-thing"
+  preservingMatrix $ do
+    translate $ Vector3 (-180 :: NDouble) (-100) 0
+    scale (0.4 :: NDouble) 0.4 0.4
+    renderString Roman "Press Z key"
+
+  swapBuffers
+-}
 
 
     
